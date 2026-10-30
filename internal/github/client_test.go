@@ -234,3 +234,75 @@ func TestUpsertPRComment_CreateAndUpdate(t *testing.T) {
 		t.Errorf("expected updated comment body to contain Run 2, got %q", comments[0].Body)
 	}
 }
+
+func TestUploadPRScenarios_DisambiguatesDuplicateSlugs(t *testing.T) {
+	tmp := t.TempDir()
+	gif1 := filepath.Join(tmp, "flow1.gif")
+	gif2 := filepath.Join(tmp, "flow2.gif")
+	if err := os.WriteFile(gif1, []byte("GIF89a-1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(gif2, []byte("GIF89a-2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var treePaths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/shop/git/ref/heads/demonstra-assets":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/shop/git/blobs":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"sha":"blob-sha"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/shop/git/trees":
+			var payload struct {
+				Tree []struct {
+					Path string `json:"path"`
+				} `json:"tree"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			for _, ent := range payload.Tree {
+				treePaths = append(treePaths, ent.Path)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"sha":"tree-sha"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/shop/git/commits":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"sha":"commit-sha"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/shop/git/refs":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"ref":"refs/heads/demonstra-assets"}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewClient("acme", "shop", "secret-token", "demonstra-assets")
+	client.BaseURL = srv.URL
+
+	uploaded, _, err := client.UploadPRScenarios(context.Background(), 42, "a8f921c", []ScenarioAssetInput{
+		{
+			Scenario: collector.Scenario{Title: "Displays error", Slug: "displays-error"},
+			GIFPath:  gif1,
+		},
+		{
+			Scenario: collector.Scenario{Title: "Displays error", Slug: "displays-error"},
+			GIFPath:  gif2,
+		},
+	})
+	if err != nil {
+		t.Fatalf("UploadPRScenarios failed: %v", err)
+	}
+	if len(treePaths) != 2 || treePaths[0] == treePaths[1] {
+		t.Fatalf("expected 2 distinct tree paths for duplicate slugs, got %v", treePaths)
+	}
+	if treePaths[0] != "pr-42/a8f921c/displays-error/flow.gif" || treePaths[1] != "pr-42/a8f921c/displays-error-2/flow.gif" {
+		t.Errorf("unexpected disambiguated paths: %v", treePaths)
+	}
+	if uploaded[0].GIFURL == uploaded[1].GIFURL {
+		t.Errorf("expected distinct GIFURLs, got identical %q", uploaded[0].GIFURL)
+	}
+}
+

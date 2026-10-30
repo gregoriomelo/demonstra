@@ -218,3 +218,81 @@ func TestExecute_NonStrictGracefulDegradationOnAPIError(t *testing.T) {
 		t.Fatalf("expected --strict mode to return non-zero on API failure, got 0")
 	}
 }
+
+func TestExecute_ValidatesBeforeFFmpegAndPrefersPRHeadSHA(t *testing.T) {
+	tmp := t.TempDir()
+	ffmpegMarker := filepath.Join(tmp, "ffmpeg-ran")
+	binDir := filepath.Join(tmp, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := fmt.Sprintf("#!/bin/sh\ntouch %q\nfor last; do true; done\nprintf 'GIF89a' > \"$last\"\n", ffmpegMarker)
+	if err := os.WriteFile(filepath.Join(binDir, "ffmpeg"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	resultsDir := filepath.Join(tmp, "test-results")
+	flowDir := filepath.Join(resultsDir, "checkout-flow")
+	if err := os.MkdirAll(flowDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(flowDir, "video.webm"), []byte("webm"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Missing token with --strict should fail BEFORE invoking ffmpeg
+	var stdout, stderr bytes.Buffer
+	code := Execute(context.Background(), []string{
+		"publish",
+		"--results-dir", resultsDir,
+		"--repo", "acme/shop",
+		"--pr", "7",
+		"--sha", "abcdef1234567",
+		"--strict",
+	}, Env{
+		LookupEnv: func(string) string { return "" },
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+	})
+	if code == 0 {
+		t.Fatalf("expected non-zero exit code when token is missing in strict mode")
+	}
+	if _, err := os.Stat(ffmpegMarker); err == nil {
+		t.Fatalf("expected validation to fail BEFORE running ffmpeg, but ffmpeg was executed")
+	}
+
+	// 2. When GITHUB_EVENT_PATH has pull_request.head.sha, prefer it over GITHUB_SHA merge commit
+	var posted []string
+	srv := newMockGitHubServer(t, &posted)
+	defer srv.Close()
+
+	eventPath := filepath.Join(tmp, "event.json")
+	if err := os.WriteFile(eventPath, []byte(`{"pull_request":{"number":19,"head":{"ref":"feat/head-sha","sha":"9876543210fedcba"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	envMap := map[string]string{
+		"GITHUB_REPOSITORY": "acme/shop",
+		"GITHUB_SHA":        "mergecommit00000",
+		"GITHUB_TOKEN":      "ghs_valid",
+		"GITHUB_EVENT_PATH": eventPath,
+	}
+	code = Execute(context.Background(), []string{
+		"publish",
+		"--results-dir", resultsDir,
+		"--api-url", srv.URL,
+		"--strict",
+	}, Env{
+		LookupEnv: func(k string) string { return envMap[k] },
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+	})
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d (stderr: %s)", code, stderr.String())
+	}
+	if len(posted) != 1 || !strings.Contains(posted[0], "Commit `9876543`") {
+		t.Fatalf("expected comment to use PR head SHA 9876543 instead of merge SHA, got:\n%v", posted)
+	}
+}
+

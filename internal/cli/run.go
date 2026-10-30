@@ -105,11 +105,12 @@ func parseOptions(subcmd string, flagArgs []string, lookupEnv func(string) strin
 	fs.SetOutput(io.Discard)
 
 	var opts options
+	var shaFlag string
 	fs.StringVar(&opts.resultsDir, "results-dir", "./test-results", "Directory containing test videos and screenshots")
 	fs.StringVar(&opts.reportFile, "report-file", "", "Optional Playwright JSON report path")
 	fs.StringVar(&opts.repo, "repo", lookupEnv("GITHUB_REPOSITORY"), "GitHub owner/repo")
 	fs.IntVar(&opts.prNumber, "pr", 0, "Pull request number")
-	fs.StringVar(&opts.sha, "sha", lookupEnv("GITHUB_SHA"), "Commit SHA")
+	fs.StringVar(&shaFlag, "sha", "", "Commit SHA")
 	fs.StringVar(&opts.token, "token", lookupEnv("GITHUB_TOKEN"), "GitHub token")
 	fs.StringVar(&opts.branch, "branch", "demonstra-assets", "Orphan branch for storing assets")
 	fs.StringVar(&opts.prBranch, "pr-branch", lookupEnv("GITHUB_HEAD_REF"), "Pull request head branch name")
@@ -121,6 +122,7 @@ func parseOptions(subcmd string, flagArgs []string, lookupEnv func(string) strin
 		return opts, err
 	}
 
+	opts.sha = shaFlag
 	if opts.prNumber == 0 {
 		if prStr := lookupEnv("DEMONSTRA_PR_NUMBER"); prStr != "" {
 			if n, err := strconv.Atoi(prStr); err == nil {
@@ -128,31 +130,36 @@ func parseOptions(subcmd string, flagArgs []string, lookupEnv func(string) strin
 			}
 		}
 	}
-	if opts.prNumber == 0 {
-		if eventPath := lookupEnv("GITHUB_EVENT_PATH"); eventPath != "" {
-			prNum, headRef := parseGitHubEvent(eventPath)
-			if prNum > 0 {
-				opts.prNumber = prNum
-			}
-			if opts.prBranch == "" && headRef != "" {
-				opts.prBranch = headRef
-			}
+	if eventPath := lookupEnv("GITHUB_EVENT_PATH"); eventPath != "" {
+		prNum, headRef, headSHA := parseGitHubEvent(eventPath)
+		if opts.prNumber == 0 && prNum > 0 {
+			opts.prNumber = prNum
 		}
+		if opts.prBranch == "" && headRef != "" {
+			opts.prBranch = headRef
+		}
+		if opts.sha == "" && headSHA != "" {
+			opts.sha = headSHA
+		}
+	}
+	if opts.sha == "" {
+		opts.sha = lookupEnv("GITHUB_SHA")
 	}
 
 	return opts, nil
 }
 
-func parseGitHubEvent(eventPath string) (int, string) {
+func parseGitHubEvent(eventPath string) (int, string, string) {
 	data, err := os.ReadFile(eventPath)
 	if err != nil {
-		return 0, ""
+		return 0, "", ""
 	}
 	var payload struct {
 		PullRequest struct {
 			Number int `json:"number"`
 			Head   struct {
 				Ref string `json:"ref"`
+				SHA string `json:"sha"`
 			} `json:"head"`
 		} `json:"pull_request"`
 		Issue struct {
@@ -160,12 +167,12 @@ func parseGitHubEvent(eventPath string) (int, string) {
 		} `json:"issue"`
 	}
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return 0, ""
+		return 0, "", ""
 	}
 	if payload.PullRequest.Number > 0 {
-		return payload.PullRequest.Number, payload.PullRequest.Head.Ref
+		return payload.PullRequest.Number, payload.PullRequest.Head.Ref, payload.PullRequest.Head.SHA
 	}
-	return payload.Issue.Number, ""
+	return payload.Issue.Number, "", ""
 }
 
 func runTestCommand(ctx context.Context, cmdArgs []string, stdout, stderr io.Writer) int {
@@ -184,6 +191,17 @@ func runTestCommand(ctx context.Context, cmdArgs []string, stdout, stderr io.Wri
 }
 
 func runPublishPipeline(ctx context.Context, opts options, env Env) error {
+	parts := strings.SplitN(opts.repo, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return fmt.Errorf("invalid or missing --repo %q (expected owner/repo)", opts.repo)
+	}
+	if opts.prNumber <= 0 {
+		return fmt.Errorf("missing pull request number (--pr or GITHUB_EVENT_PATH)")
+	}
+	if strings.TrimSpace(opts.token) == "" {
+		return fmt.Errorf("missing GitHub token (--token or GITHUB_TOKEN environment variable)")
+	}
+
 	scenarios, err := collector.Discover(opts.resultsDir, opts.reportFile)
 	if err != nil {
 		return fmt.Errorf("discover test artifacts: %w", err)
@@ -216,14 +234,6 @@ func runPublishPipeline(ctx context.Context, opts options, env Env) error {
 			GIFPath:        gifPath,
 			ScreenshotPath: sc.Screenshots,
 		})
-	}
-
-	parts := strings.SplitN(opts.repo, "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return fmt.Errorf("invalid or missing --repo %q (expected owner/repo)", opts.repo)
-	}
-	if opts.prNumber <= 0 {
-		return fmt.Errorf("missing pull request number (--pr or GITHUB_EVENT_PATH)")
 	}
 
 	ghClient := github.NewClient(parts[0], parts[1], opts.token, opts.branch)

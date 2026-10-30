@@ -88,14 +88,20 @@ func (c *Client) UploadPRScenarios(ctx context.Context, prNumber int, commitSHA 
 
 	var entries []treeEntry
 	uploaded := make([]UploadedScenario, 0, len(inputs))
+	allocatedSlugs := make(map[string]int)
 
 	for idx, in := range inputs {
-		slug := in.Scenario.Slug
-		if slug == "" {
-			slug = collector.Slugify(in.Scenario.Title)
+		baseSlug := in.Scenario.Slug
+		if baseSlug == "" {
+			baseSlug = collector.Slugify(in.Scenario.Title)
 		}
-		if slug == "" {
-			slug = fmt.Sprintf("scenario-%d", idx+1)
+		if baseSlug == "" {
+			baseSlug = fmt.Sprintf("scenario-%d", idx+1)
+		}
+		allocatedSlugs[baseSlug]++
+		slug := baseSlug
+		if count := allocatedSlugs[baseSlug]; count > 1 {
+			slug = fmt.Sprintf("%s-%d", baseSlug, count)
 		}
 		up := UploadedScenario{Scenario: in.Scenario}
 
