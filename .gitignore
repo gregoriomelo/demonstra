@@ -1,0 +1,18 @@
+# Superpowers brainstorming sessions
+.superpowers/
+
+# OS files
+.DS_Store
+
+# Go build artifacts
+bin/
+dist/
+demonstra
+*.exe
+*.test
+*.out
+coverage.txt
+
+# Test artifacts
+test-results/
+playwright-report/
