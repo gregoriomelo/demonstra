@@ -1,0 +1,257 @@
+package cli
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	"github.com/demonstra-me/demonstra/internal/collector"
+	"github.com/demonstra-me/demonstra/internal/github"
+	"github.com/demonstra-me/demonstra/internal/media"
+	"github.com/demonstra-me/demonstra/internal/render"
+)
+
+type Env struct {
+	LookupEnv func(string) string
+	Stdout    io.Writer
+	Stderr    io.Writer
+}
+
+type options struct {
+	resultsDir string
+	reportFile string
+	repo       string
+	prNumber   int
+	sha        string
+	token      string
+	branch     string
+	prBranch   string
+	apiURL     string
+	webURL     string
+	strict     bool
+}
+
+func Execute(ctx context.Context, args []string, env Env) int {
+	if env.LookupEnv == nil {
+		env.LookupEnv = os.Getenv
+	}
+	if env.Stdout == nil {
+		env.Stdout = os.Stdout
+	}
+	if env.Stderr == nil {
+		env.Stderr = os.Stderr
+	}
+
+	if len(args) == 0 {
+		fmt.Fprintln(env.Stderr, "usage: demonstra <record|publish> [flags] [-- command...]")
+		return 2
+	}
+
+	subcmd := args[0]
+	if subcmd != "record" && subcmd != "publish" {
+		fmt.Fprintf(env.Stderr, "unknown subcommand %q (expected 'record' or 'publish')\n", subcmd)
+		return 2
+	}
+
+	flagArgs := args[1:]
+	var testCmdArgs []string
+	for i, a := range flagArgs {
+		if a == "--" {
+			testCmdArgs = flagArgs[i+1:]
+			flagArgs = flagArgs[:i]
+			break
+		}
+	}
+
+	opts, err := parseOptions(subcmd, flagArgs, env.LookupEnv)
+	if err != nil {
+		fmt.Fprintf(env.Stderr, "error parsing flags: %v\n", err)
+		return 2
+	}
+
+	testExitCode := 0
+	if subcmd == "record" {
+		if len(testCmdArgs) == 0 {
+			fmt.Fprintln(env.Stderr, "error: 'demonstra record' requires a command after '--'")
+			return 2
+		}
+		testExitCode = runTestCommand(ctx, testCmdArgs, env.Stdout, env.Stderr)
+	}
+
+	if err := runPublishPipeline(ctx, opts, env); err != nil {
+		if opts.strict {
+			fmt.Fprintf(env.Stderr, "error: %v\n", err)
+			if testExitCode != 0 {
+				return testExitCode
+			}
+			return 1
+		}
+		fmt.Fprintf(env.Stderr, "warning: demonstra publish failed: %v\n", err)
+	}
+
+	return testExitCode
+}
+
+func parseOptions(subcmd string, flagArgs []string, lookupEnv func(string) string) (options, error) {
+	fs := flag.NewFlagSet("demonstra "+subcmd, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var opts options
+	fs.StringVar(&opts.resultsDir, "results-dir", "./test-results", "Directory containing test videos and screenshots")
+	fs.StringVar(&opts.reportFile, "report-file", "", "Optional Playwright JSON report path")
+	fs.StringVar(&opts.repo, "repo", lookupEnv("GITHUB_REPOSITORY"), "GitHub owner/repo")
+	fs.IntVar(&opts.prNumber, "pr", 0, "Pull request number")
+	fs.StringVar(&opts.sha, "sha", lookupEnv("GITHUB_SHA"), "Commit SHA")
+	fs.StringVar(&opts.token, "token", lookupEnv("GITHUB_TOKEN"), "GitHub token")
+	fs.StringVar(&opts.branch, "branch", "demonstra-assets", "Orphan branch for storing assets")
+	fs.StringVar(&opts.prBranch, "pr-branch", lookupEnv("GITHUB_HEAD_REF"), "Pull request head branch name")
+	fs.StringVar(&opts.apiURL, "api-url", "https://api.github.com", "GitHub REST API base URL")
+	fs.StringVar(&opts.webURL, "web-url", "https://github.com", "GitHub web base URL")
+	fs.BoolVar(&opts.strict, "strict", false, "Fail with non-zero exit code if visual publishing fails")
+
+	if err := fs.Parse(flagArgs); err != nil {
+		return opts, err
+	}
+
+	if opts.prNumber == 0 {
+		if prStr := lookupEnv("DEMONSTRA_PR_NUMBER"); prStr != "" {
+			if n, err := strconv.Atoi(prStr); err == nil {
+				opts.prNumber = n
+			}
+		}
+	}
+	if opts.prNumber == 0 {
+		if eventPath := lookupEnv("GITHUB_EVENT_PATH"); eventPath != "" {
+			prNum, headRef := parseGitHubEvent(eventPath)
+			if prNum > 0 {
+				opts.prNumber = prNum
+			}
+			if opts.prBranch == "" && headRef != "" {
+				opts.prBranch = headRef
+			}
+		}
+	}
+
+	return opts, nil
+}
+
+func parseGitHubEvent(eventPath string) (int, string) {
+	data, err := os.ReadFile(eventPath)
+	if err != nil {
+		return 0, ""
+	}
+	var payload struct {
+		PullRequest struct {
+			Number int `json:"number"`
+			Head   struct {
+				Ref string `json:"ref"`
+			} `json:"head"`
+		} `json:"pull_request"`
+		Issue struct {
+			Number int `json:"number"`
+		} `json:"issue"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return 0, ""
+	}
+	if payload.PullRequest.Number > 0 {
+		return payload.PullRequest.Number, payload.PullRequest.Head.Ref
+	}
+	return payload.Issue.Number, ""
+}
+
+func runTestCommand(ctx context.Context, cmdArgs []string, stdout, stderr io.Writer) int {
+	cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	err := cmd.Run()
+	if err == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return 1
+}
+
+func runPublishPipeline(ctx context.Context, opts options, env Env) error {
+	scenarios, err := collector.Discover(opts.resultsDir, opts.reportFile)
+	if err != nil {
+		return fmt.Errorf("discover test artifacts: %w", err)
+	}
+	if len(scenarios) == 0 {
+		fmt.Fprintf(env.Stderr, "warning: no scenarios with videos or screenshots found in %s\n", opts.resultsDir)
+		return nil
+	}
+
+	tmpGIFDir, err := os.MkdirTemp("", "demonstra-gifs-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpGIFDir)
+
+	conv := media.NewConverter(nil)
+	assetInputs := make([]github.ScenarioAssetInput, 0, len(scenarios))
+
+	for i, sc := range scenarios {
+		var gifPath string
+		if sc.VideoPath != "" {
+			outGIF := filepath.Join(tmpGIFDir, fmt.Sprintf("%d-%s.gif", i+1, sc.Slug))
+			if err := conv.ConvertToGIF(ctx, sc.VideoPath, outGIF); err != nil {
+				return fmt.Errorf("convert video for %q: %w", sc.Title, err)
+			}
+			gifPath = outGIF
+		}
+		assetInputs = append(assetInputs, github.ScenarioAssetInput{
+			Scenario:       sc,
+			GIFPath:        gifPath,
+			ScreenshotPath: sc.Screenshots,
+		})
+	}
+
+	parts := strings.SplitN(opts.repo, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return fmt.Errorf("invalid or missing --repo %q (expected owner/repo)", opts.repo)
+	}
+	if opts.prNumber <= 0 {
+		return fmt.Errorf("missing pull request number (--pr or GITHUB_EVENT_PATH)")
+	}
+
+	ghClient := github.NewClient(parts[0], parts[1], opts.token, opts.branch)
+	ghClient.BaseURL = opts.apiURL
+	ghClient.WebBaseURL = opts.webURL
+
+	uploaded, prevRuns, err := ghClient.UploadPRScenarios(ctx, opts.prNumber, opts.sha, assetInputs)
+	if err != nil {
+		return fmt.Errorf("upload scenario assets to GitHub: %w", err)
+	}
+
+	md := render.FormatComment(render.RenderInput{
+		PRNumber:     opts.prNumber,
+		BranchName:   opts.prBranch,
+		CommitSHA:    opts.sha,
+		AssetBranch:  opts.branch,
+		Scenarios:    uploaded,
+		PreviousRuns: prevRuns,
+	})
+
+	if summaryPath := env.LookupEnv("GITHUB_STEP_SUMMARY"); summaryPath != "" {
+		_ = render.WriteStepSummary(summaryPath, md)
+	}
+
+	if err := ghClient.UpsertPRComment(ctx, opts.prNumber, md); err != nil {
+		return fmt.Errorf("upsert PR comment: %w", err)
+	}
+
+	fmt.Fprintf(env.Stdout, "demonstra.me: published %d visual scenario(s) to PR #%d\n", len(uploaded), opts.prNumber)
+	return nil
+}
