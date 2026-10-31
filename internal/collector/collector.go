@@ -132,7 +132,7 @@ func parsePlaywrightReport(data []byte) ([]Scenario, error) {
 					}
 					ext := strings.ToLower(filepath.Ext(att.Path))
 					switch {
-					case ext == ".webm" || ext == ".mp4" || strings.HasPrefix(att.ContentType, "video/"):
+					case ext == ".webm" || ext == ".mp4" || ext == ".gif" || strings.HasPrefix(att.ContentType, "video/") || att.ContentType == "image/gif":
 						if videoPath == "" {
 							videoPath = att.Path
 						}
@@ -207,7 +207,7 @@ func scanResultsDir(resultsDir string) ([]Scenario, error) {
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(path))
-		if ext != ".webm" && ext != ".mp4" && ext != ".png" {
+		if ext != ".webm" && ext != ".mp4" && ext != ".gif" && ext != ".png" {
 			return nil
 		}
 		parent := filepath.Dir(path)
@@ -216,7 +216,7 @@ func scanResultsDir(resultsDir string) ([]Scenario, error) {
 			g = &dirGroup{dir: parent}
 			groups[parent] = g
 		}
-		if ext == ".webm" || ext == ".mp4" {
+		if ext == ".webm" || ext == ".mp4" || ext == ".gif" {
 			if g.videoPath == "" {
 				g.videoPath = path
 			}

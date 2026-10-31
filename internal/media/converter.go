@@ -3,9 +3,15 @@ package media
 import (
 	"context"
 	"fmt"
+	"image"
+	"image/color/palette"
+	"image/draw"
+	"image/gif"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 const DefaultMaxGIFBytes int64 = 9 * 1024 * 1024 // 9 MB (9437184 bytes)
@@ -49,6 +55,13 @@ func (c *Converter) ConvertToGIF(ctx context.Context, videoPath string, outGIFPa
 	if err := os.MkdirAll(filepath.Dir(outGIFPath), 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
+	if strings.EqualFold(filepath.Ext(videoPath), ".gif") {
+		raw, err := os.ReadFile(videoPath)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(outGIFPath, raw, 0o644)
+	}
 	if err := c.runFFmpeg(ctx, videoPath, outGIFPath, primaryFilter); err != nil {
 		return err
 	}
@@ -62,6 +75,41 @@ func (c *Converter) ConvertToGIF(ctx context.Context, videoPath string, outGIFPa
 		}
 	}
 	return nil
+}
+
+func EncodeGIFsFromPNGs(pngPaths []string, outGIFPath string, delayHundredths int) error {
+	if len(pngPaths) == 0 {
+		return fmt.Errorf("no PNG files provided")
+	}
+	if delayHundredths <= 0 {
+		delayHundredths = 120
+	}
+	if err := os.MkdirAll(filepath.Dir(outGIFPath), 0o755); err != nil {
+		return err
+	}
+	anim := &gif.GIF{}
+	for _, p := range pngPaths {
+		f, err := os.Open(p)
+		if err != nil {
+			return err
+		}
+		src, err := png.Decode(f)
+		_ = f.Close()
+		if err != nil {
+			return fmt.Errorf("decode png %s: %w", p, err)
+		}
+		bounds := src.Bounds()
+		paletted := image.NewPaletted(bounds, palette.Plan9)
+		draw.FloydSteinberg.Draw(paletted, bounds, src, bounds.Min)
+		anim.Image = append(anim.Image, paletted)
+		anim.Delay = append(anim.Delay, delayHundredths)
+	}
+	outFile, err := os.Create(outGIFPath)
+	if err != nil {
+		return err
+	}
+	defer outFile.Close()
+	return gif.EncodeAll(outFile, anim)
 }
 
 func (c *Converter) runFFmpeg(ctx context.Context, videoPath, outGIFPath, filter string) error {

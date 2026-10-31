@@ -4,11 +4,29 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func writeTestPNG(path string, w, h int) error {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{R: 30, G: 120, B: 200, A: 255})
+		}
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return png.Encode(f, img)
+}
 
 type recordedCall struct {
 	name string
@@ -104,3 +122,28 @@ func TestConvertToGIF_RunnerError(t *testing.T) {
 		t.Fatalf("expected error containing 'ffmpeg', got %v", err)
 	}
 }
+
+func TestEncodeGIFsFromPNGs(t *testing.T) {
+	tmp := t.TempDir()
+	png1 := filepath.Join(tmp, "step-1.png")
+	png2 := filepath.Join(tmp, "step-2.png")
+	if err := writeTestPNG(png1, 100, 60); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeTestPNG(png2, 100, 60); err != nil {
+		t.Fatal(err)
+	}
+
+	outGIF := filepath.Join(tmp, "out", "anim.gif")
+	if err := EncodeGIFsFromPNGs([]string{png1, png2}, outGIF, 100); err != nil {
+		t.Fatalf("EncodeGIFsFromPNGs failed: %v", err)
+	}
+	data, err := os.ReadFile(outGIF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasPrefix(data, []byte("GIF89a")) {
+		t.Errorf("expected valid GIF89a header, got %q", data[:6])
+	}
+}
+

@@ -222,12 +222,25 @@ func runPublishPipeline(ctx context.Context, opts options, env Env) error {
 
 	for i, sc := range scenarios {
 		var gifPath string
+		outGIF := filepath.Join(tmpGIFDir, fmt.Sprintf("%d-%s.gif", i+1, sc.Slug))
 		if sc.VideoPath != "" {
-			outGIF := filepath.Join(tmpGIFDir, fmt.Sprintf("%d-%s.gif", i+1, sc.Slug))
 			if err := conv.ConvertToGIF(ctx, sc.VideoPath, outGIF); err != nil {
-				return fmt.Errorf("convert video for %q: %w", sc.Title, err)
+				if len(sc.Screenshots) > 0 {
+					if fbErr := media.EncodeGIFsFromPNGs(sc.Screenshots, outGIF, 120); fbErr == nil {
+						gifPath = outGIF
+					} else {
+						return fmt.Errorf("convert video for %q: %w", sc.Title, err)
+					}
+				} else {
+					return fmt.Errorf("convert video for %q: %w", sc.Title, err)
+				}
+			} else {
+				gifPath = outGIF
 			}
-			gifPath = outGIF
+		} else if len(sc.Screenshots) > 0 {
+			if err := media.EncodeGIFsFromPNGs(sc.Screenshots, outGIF, 120); err == nil {
+				gifPath = outGIF
+			}
 		}
 		assetInputs = append(assetInputs, github.ScenarioAssetInput{
 			Scenario:       sc,
