@@ -225,6 +225,7 @@ func runPublishPipeline(ctx context.Context, opts options, env Env) error {
 		outGIF := filepath.Join(tmpGIFDir, fmt.Sprintf("%d-%s.gif", i+1, sc.Slug))
 		if sc.VideoPath != "" {
 			if err := conv.ConvertToGIF(ctx, sc.VideoPath, outGIF); err != nil {
+				fmt.Fprintf(os.Stderr, "demonstra: warning: ffmpeg conversion failed for %q: %v\n", sc.Title, err)
 				if len(sc.Screenshots) > 0 {
 					if fbErr := media.EncodeGIFsFromPNGs(sc.Screenshots, outGIF, 120); fbErr == nil {
 						gifPath = outGIF
