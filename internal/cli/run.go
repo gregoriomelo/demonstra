@@ -114,7 +114,7 @@ func Execute(ctx context.Context, args []string, env Env) int {
 
 func runInitCommand(flagArgs []string, env Env) int {
 	fs := flag.NewFlagSet("demonstra init", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs.SetOutput(env.Stderr)
 	var dir string
 	var fw string
 	var force bool
@@ -123,6 +123,9 @@ func runInitCommand(flagArgs []string, env Env) int {
 	fs.BoolVar(&force, "force", false, "Overwrite existing workflow and helper files")
 
 	if err := fs.Parse(flagArgs); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		fmt.Fprintf(env.Stderr, "error parsing flags: %v\n", err)
 		return 2
 	}
@@ -143,6 +146,10 @@ func runInitCommand(flagArgs []string, env Env) int {
 	}
 	for _, f := range res.SkippedFiles {
 		fmt.Fprintf(env.Stdout, "  - Skipped %s (already exists, use --force to overwrite)\n", f)
+	}
+	if res.Framework == scaffold.FrameworkGeneric {
+		fmt.Fprintln(env.Stdout, "\nNotice: No supported test framework (Playwright, Cypress) was auto-detected.")
+		fmt.Fprintln(env.Stdout, "Please review .github/workflows/demonstra.yml and set your test command in the 'command:' input.")
 	}
 	return 0
 }
@@ -246,7 +253,7 @@ func runPublishPipeline(ctx context.Context, opts options, env Env) error {
 		return fmt.Errorf("missing pull request number (--pr or GITHUB_EVENT_PATH)")
 	}
 	if strings.TrimSpace(opts.token) == "" {
-		return fmt.Errorf("missing GitHub token (--token or GITHUB_TOKEN environment variable)")
+		return fmt.Errorf("missing GitHub token: provide --token or GITHUB_TOKEN environment variable with 'contents: write' and 'pull-requests: write' permissions")
 	}
 
 	scenarios, err := collector.Discover(opts.resultsDir, opts.reportFile)

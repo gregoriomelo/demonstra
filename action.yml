@@ -38,6 +38,16 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    - name: Validate GitHub Token
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.github-token }}
+      run: |
+        if [ -z "$TOKEN" ]; then
+          echo "::error::Demonstra requires a GitHub token with 'contents: write' and 'pull-requests: write' permissions. Please pass 'github-token: \${{ secrets.GITHUB_TOKEN }}' and ensure permissions are configured in your workflow."
+          exit 1
+        fi
+
     - name: Ensure FFmpeg is installed
       shell: bash
       run: |
@@ -76,18 +86,26 @@ runs:
         if [ -f "$GITHUB_ACTION_PATH/bin/$BIN_NAME" ]; then
           cp "$GITHUB_ACTION_PATH/bin/$BIN_NAME" "$TARGET"
         else
-          RELEASE_URL="https://github.com/demonstra-me/demonstra/releases/download/${DEMONSTRA_VERSION}/${BIN_NAME}"
+          echo "Downloading Demonstra CLI..."
+          BASE_URL="https://github.com/demonstra-me/demonstra/releases/download/${DEMONSTRA_VERSION}"
           if [ "$DEMONSTRA_VERSION" = "latest" ]; then
-            RELEASE_URL="https://github.com/demonstra-me/demonstra/releases/latest/download/${BIN_NAME}"
+            BASE_URL="https://github.com/demonstra-me/demonstra/releases/latest/download"
           fi
-          echo "Downloading Demonstra CLI from $RELEASE_URL..."
-          if ! curl -sfL "$RELEASE_URL" -o "$TARGET"; then
-            echo "Release download failed, attempting fallback download..."
-            FALLBACK_URL="https://raw.githubusercontent.com/demonstra-me/demonstra/main/bin/${BIN_NAME}"
-            curl -sfL "$FALLBACK_URL" -o "$TARGET" || {
-              echo "::error::Could not download Demonstra binary for ${OS}-${GOARCH}"
-              exit 1
-            }
+
+          VERSION_CLEAN="${DEMONSTRA_VERSION#v}"
+          TAR_NAME="demonstra_${VERSION_CLEAN}_${OS}_${GOARCH}.tar.gz"
+
+          # Attempt 1: Standalone binary asset
+          if curl -sfL "$BASE_URL/$BIN_NAME" -o "$TARGET"; then
+            echo "Downloaded standalone binary."
+          # Attempt 2: Tarball archive
+          elif curl -sfL "$BASE_URL/$TAR_NAME" -o "$INSTALL_DIR/archive.tar.gz"; then
+            tar -xzf "$INSTALL_DIR/archive.tar.gz" -C "$INSTALL_DIR" demonstra
+            rm -f "$INSTALL_DIR/archive.tar.gz"
+            echo "Extracted binary from archive."
+          else
+            echo "::error::Could not download Demonstra binary ($BIN_NAME or $TAR_NAME) from $BASE_URL"
+            exit 1
           fi
         fi
 

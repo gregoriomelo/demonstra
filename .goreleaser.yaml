@@ -36,6 +36,9 @@ archives:
       - README.md
       - LICENSE*
       - action.yml
+  - id: binary
+    format: binary
+    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
 
 checksum:
   name_template: "checksums.txt"

@@ -73,8 +73,8 @@ func TestInit_ScaffoldsPlaywrightFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected workflow file to be created: %v", err)
 	}
-	if !strings.Contains(string(workflowData), "demonstra record") && !strings.Contains(string(workflowData), "demonstra-me/action") {
-		t.Errorf("workflow missing demonstra record command: %s", string(workflowData))
+	if !strings.Contains(string(workflowData), "uses: demonstra-me/demonstra@v1") {
+		t.Errorf("workflow should dogfood official composite action: %s", string(workflowData))
 	}
 
 	interactPath := filepath.Join(tmp, "e2e", "support", "interact.js")
@@ -84,6 +84,45 @@ func TestInit_ScaffoldsPlaywrightFiles(t *testing.T) {
 	}
 	if !strings.Contains(string(interactData), "__demonstra_radar") || !strings.Contains(string(interactData), "__demonstra_hud") {
 		t.Errorf("interact.js missing radar or hud components: %s", string(interactData))
+	}
+	if !strings.Contains(string(interactData), "escapeHTML") {
+		t.Errorf("interact.js missing HTML escaping protection: %s", string(interactData))
+	}
+}
+
+func TestInit_CypressDoesNotInstallPlaywright(t *testing.T) {
+	tmp := t.TempDir()
+	res, err := Init(InitOptions{
+		TargetDir: tmp,
+		Framework: FrameworkCypress,
+	})
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	if res.Framework != FrameworkCypress {
+		t.Errorf("expected %s, got %s", FrameworkCypress, res.Framework)
+	}
+
+	workflowData, err := os.ReadFile(filepath.Join(tmp, ".github", "workflows", "demonstra.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(workflowData), "playwright install") {
+		t.Errorf("Cypress workflow should not contain playwright install: %s", string(workflowData))
+	}
+	if !strings.Contains(string(workflowData), "npx cypress run") {
+		t.Errorf("Cypress workflow missing cypress run command: %s", string(workflowData))
+	}
+}
+
+func TestInit_InvalidFrameworkError(t *testing.T) {
+	tmp := t.TempDir()
+	_, err := Init(InitOptions{
+		TargetDir: tmp,
+		Framework: "unsupported-fw",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported framework") {
+		t.Fatalf("expected unsupported framework error, got %v", err)
 	}
 }
 

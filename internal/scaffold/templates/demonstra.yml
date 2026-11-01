@@ -23,19 +23,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci || npm install
-
-      - name: Install test browsers
-        run: npx playwright install --with-deps chromium
-
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Run Tests with Demonstra Visual Review
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          curl -sfL https://raw.githubusercontent.com/demonstra-me/demonstra/main/bin/demonstra-linux-amd64 -o /usr/local/bin/demonstra
-          chmod +x /usr/local/bin/demonstra
-          demonstra record \
-            --results-dir ./test-results \
-            -- {{TEST_COMMAND}}
+{{SETUP_STEPS}}
+      - name: Demonstra Visual Review
+        uses: demonstra-me/demonstra@v1
+        with:
+          command: {{TEST_COMMAND}}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

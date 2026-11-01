@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -63,6 +64,10 @@ func Init(opts InitOptions) (InitResult, error) {
 		fw = Detect(targetDir)
 	}
 
+	if fw != FrameworkPlaywright && fw != FrameworkCypress && fw != FrameworkGeneric {
+		return InitResult{}, fmt.Errorf("unsupported framework %q (expected 'playwright', 'cypress', or 'generic')", fw)
+	}
+
 	res := InitResult{
 		Framework: fw,
 	}
@@ -75,7 +80,14 @@ func Init(opts InitOptions) (InitResult, error) {
 		filesToCreate[filepath.Join("e2e", "support", "interact.js")] = interactJSTemplate
 	}
 
-	for relPath, content := range filesToCreate {
+	keys := make([]string, 0, len(filesToCreate))
+	for k := range filesToCreate {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, relPath := range keys {
+		content := filesToCreate[relPath]
 		fullPath := filepath.Join(targetDir, relPath)
 		if _, err := os.Stat(fullPath); err == nil && !opts.Force {
 			res.SkippedFiles = append(res.SkippedFiles, relPath)
@@ -97,8 +109,19 @@ func Init(opts InitOptions) (InitResult, error) {
 
 func renderWorkflow(fw Framework) string {
 	testCmd := "npx playwright test"
-	if fw == FrameworkCypress {
+	setupSteps := ""
+
+	switch fw {
+	case FrameworkPlaywright:
+		testCmd = "npx playwright test"
+		setupSteps = "\n      - name: Install test browsers\n        run: npx playwright install --with-deps chromium"
+	case FrameworkCypress:
 		testCmd = "npx cypress run"
+	case FrameworkGeneric:
+		testCmd = "npm test # TODO: replace with your E2E test command"
 	}
-	return strings.ReplaceAll(workflowTemplate, "{{TEST_COMMAND}}", testCmd)
+
+	content := strings.ReplaceAll(workflowTemplate, "{{TEST_COMMAND}}", testCmd)
+	content = strings.ReplaceAll(content, "{{SETUP_STEPS}}", setupSteps)
+	return content
 }

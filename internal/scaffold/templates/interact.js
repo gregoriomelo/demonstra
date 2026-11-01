@@ -138,6 +138,16 @@ export async function enableVisualInteractions(page) {
       return hud;
     }
 
+    function escapeHTML(str) {
+      return String(str).replace(/[&<>"']/g, c => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[c]));
+    }
+
     function showHUD(html, duration = 800) {
       const h = getHUD();
       if (!h) return;
@@ -211,7 +221,7 @@ export async function enableVisualInteractions(page) {
         }
 
         const shortLabel = label.length > 25 ? label.slice(0, 25) + '…' : label;
-        showHUD(`<span>🖱️ Click</span> <strong style="color: #fca5a5;">${shortLabel}</strong>`, 750);
+        showHUD(`<span>🖱️ Click</span> <strong style="color: #fca5a5;">${escapeHTML(shortLabel)}</strong>`, 750);
       }
     }
 
@@ -234,7 +244,7 @@ export async function enableVisualInteractions(page) {
       if (typeTimer) clearTimeout(typeTimer);
       typeTimer = setTimeout(() => {
         const preview = val.length > 24 ? val.slice(0, 24) + '…' : val;
-        showHUD(`<span>⌨️ Type</span> <strong style="color: #93c5fd;">"${preview}"</strong>`, 700);
+        showHUD(`<span>⌨️ Type</span> <strong style="color: #93c5fd;">"${escapeHTML(preview)}"</strong>`, 700);
       }, 80);
     }
 
