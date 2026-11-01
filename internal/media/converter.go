@@ -99,6 +99,38 @@ func (c *Converter) ConvertToMP4(ctx context.Context, videoPath string, outMP4Pa
 	return nil
 }
 
+func (c *Converter) ConvertToWebP(ctx context.Context, videoPath string, outWebPPath string) error {
+	if err := os.MkdirAll(filepath.Dir(outWebPPath), 0o755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+	if strings.EqualFold(filepath.Ext(videoPath), ".webp") {
+		raw, err := os.ReadFile(videoPath)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(outWebPPath, raw, 0o644)
+	}
+	runner := c.Runner
+	if runner == nil {
+		runner = ExecRunner{}
+	}
+	filter := "fps=12,scale='min(800,iw)':-1:flags=lanczos"
+	args := []string{
+		"-y", "-i", videoPath,
+		"-vcodec", "libwebp",
+		"-filter:v", filter,
+		"-lossless", "0",
+		"-compression_level", "4",
+		"-q:v", "75",
+		"-loop", "0",
+		outWebPPath,
+	}
+	if err := runner.Run(ctx, "ffmpeg", args...); err != nil {
+		return fmt.Errorf("ffmpeg webp conversion failed: %w", err)
+	}
+	return nil
+}
+
 func EncodeGIFsFromPNGs(pngPaths []string, outGIFPath string, delayHundredths int) error {
 	if len(pngPaths) == 0 {
 		return fmt.Errorf("no PNG files provided")

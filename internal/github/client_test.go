@@ -121,6 +121,54 @@ func TestUploadPRScenarios_OrphanBranchCreation(t *testing.T) {
 	}
 }
 
+func TestUploadPRScenarios_WebPAssetUpload(t *testing.T) {
+	tmp := t.TempDir()
+	webpPath := filepath.Join(tmp, "flow.webp")
+	if err := os.WriteFile(webpPath, []byte("RIFF....WEBP"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/git/ref/heads/"):
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git/blobs"):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"sha":"blob-webp"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git/trees"):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"sha":"tree-webp"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git/commits"):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"sha":"commit-webp"}`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git/refs"):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"ref":"refs/heads/demonstra-assets"}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewClient("acme", "shop", "secret", "demonstra-assets")
+	client.BaseURL = srv.URL
+
+	uploaded, _, err := client.UploadPRScenarios(context.Background(), 1, "12345678", []ScenarioAssetInput{
+		{
+			Scenario: collector.Scenario{Title: "WebP demo", Slug: "webp-demo"},
+			WebPPath: webpPath,
+		},
+	})
+	if err != nil {
+		t.Fatalf("UploadPRScenarios failed: %v", err)
+	}
+	wantWebP := "https://github.com/acme/shop/blob/demonstra-assets/pr-1/1234567/webp-demo/flow.webp?raw=true"
+	if len(uploaded) != 1 || uploaded[0].WebPURL != wantWebP {
+		t.Errorf("expected WebPURL %q, got %v", wantWebP, uploaded)
+	}
+}
+
 func TestUploadPRScenarios_ExistingBranchWithPreviousRuns(t *testing.T) {
 	tmp := t.TempDir()
 	gifPath := filepath.Join(tmp, "flow.gif")

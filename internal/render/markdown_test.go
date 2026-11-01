@@ -181,6 +181,33 @@ func TestFormatComment_VideoControlsLink(t *testing.T) {
 	}
 }
 
+func TestFormatComment_WebPPreferredOverGIF(t *testing.T) {
+	in := RenderInput{
+		PRNumber:    42,
+		CommitSHA:   "a8f921c",
+		AssetBranch: "demonstra-assets",
+		Scenarios: []github.UploadedScenario{
+			{
+				Scenario: collector.Scenario{
+					Title:    "Checkout flow",
+					Slug:     "checkout-flow",
+					Status:   collector.StatusPassed,
+					Duration: 5 * time.Second,
+				},
+				GIFURL:   "https://example.com/flow.gif",
+				WebPURL:  "https://example.com/flow.webp",
+				VideoURL: "https://example.com/video.mp4",
+			},
+		},
+	}
+	got := FormatComment(in)
+
+	wantClickableWebP := "[![Checkout flow](https://example.com/flow.webp)](https://example.com/video.mp4)"
+	if !strings.Contains(got, wantClickableWebP) {
+		t.Errorf("expected WebP image URL in clickable link, got:\n%s", got)
+	}
+}
+
 func TestWriteStepSummary(t *testing.T) {
 	tmp := t.TempDir()
 	summaryFile := filepath.Join(tmp, "step_summary.md")

@@ -179,6 +179,62 @@ func TestConvertToMP4_DirectCopyWhenAlreadyMP4(t *testing.T) {
 	}
 }
 
+func TestConvertToWebP_Success(t *testing.T) {
+	tmp := t.TempDir()
+	videoPath := filepath.Join(tmp, "video.webm")
+	outWebPPath := filepath.Join(tmp, "out", "flow.webp")
+
+	runner := &fakeRunner{
+		hook: func(_ int, _ string, args []string) error {
+			out := args[len(args)-1]
+			return os.WriteFile(out, []byte("fake-webp-data"), 0o644)
+		},
+	}
+
+	conv := NewConverter(runner)
+	if err := conv.ConvertToWebP(context.Background(), videoPath, outWebPPath); err != nil {
+		t.Fatalf("ConvertToWebP failed: %v", err)
+	}
+
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected 1 ffmpeg call, got %d", len(runner.calls))
+	}
+	call := runner.calls[0]
+	if call.name != "ffmpeg" {
+		t.Errorf("expected binary ffmpeg, got %q", call.name)
+	}
+	joined := strings.Join(call.args, " ")
+	if !strings.Contains(joined, "libwebp") || !strings.Contains(joined, "-loop 0") {
+		t.Errorf("expected webp conversion flags, got %v", call.args)
+	}
+	data, err := os.ReadFile(outWebPPath)
+	if err != nil || string(data) != "fake-webp-data" {
+		t.Errorf("unexpected output content: %s, err: %v", string(data), err)
+	}
+}
+
+func TestConvertToWebP_DirectCopyWhenAlreadyWebP(t *testing.T) {
+	tmp := t.TempDir()
+	inPath := filepath.Join(tmp, "source.webp")
+	outPath := filepath.Join(tmp, "out", "dest.webp")
+	if err := os.WriteFile(inPath, []byte("original-webp"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &fakeRunner{}
+	conv := NewConverter(runner)
+	if err := conv.ConvertToWebP(context.Background(), inPath, outPath); err != nil {
+		t.Fatalf("ConvertToWebP failed: %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Errorf("expected 0 ffmpeg calls when copying webp, got %d", len(runner.calls))
+	}
+	data, _ := os.ReadFile(outPath)
+	if string(data) != "original-webp" {
+		t.Errorf("expected copied content, got %q", string(data))
+	}
+}
+
 func TestEncodeGIFsFromPNGs(t *testing.T) {
 	tmp := t.TempDir()
 	png1 := filepath.Join(tmp, "step-1.png")

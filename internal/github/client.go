@@ -20,6 +20,7 @@ const CommentMarker = "<!-- demonstra-pr-comment -->"
 type ScenarioAssetInput struct {
 	Scenario       collector.Scenario
 	GIFPath        string
+	WebPPath       string
 	VideoPath      string
 	ScreenshotPath []string
 }
@@ -27,6 +28,7 @@ type ScenarioAssetInput struct {
 type UploadedScenario struct {
 	Scenario       collector.Scenario
 	GIFURL         string
+	WebPURL        string
 	VideoURL       string
 	ScreenshotURLs []string
 }
@@ -120,6 +122,21 @@ func (c *Client) UploadPRScenarios(ctx context.Context, prNumber int, commitSHA 
 				SHA:  blobSHA,
 			})
 			up.GIFURL = c.rawBlobURL(repoPath)
+		}
+
+		if in.WebPPath != "" {
+			blobSHA, err := c.createBlobFromFile(ctx, in.WebPPath)
+			if err != nil {
+				return nil, nil, fmt.Errorf("upload webp blob for %s: %w", slug, err)
+			}
+			repoPath := fmt.Sprintf("pr-%d/%s/%s/flow.webp", prNumber, shortSHA, slug)
+			entries = append(entries, treeEntry{
+				Path: repoPath,
+				Mode: "100644",
+				Type: "blob",
+				SHA:  blobSHA,
+			})
+			up.WebPURL = c.rawBlobURL(repoPath)
 		}
 
 		if in.VideoPath != "" {

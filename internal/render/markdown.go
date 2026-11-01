@@ -102,12 +102,17 @@ func renderWithOptions(in RenderInput, includeScreenshots bool, maxCards int) st
 			escapeHTML(s.Scenario.Title),
 			durSuffix,
 		)
-		if s.GIFURL != "" {
+		animURL := s.WebPURL
+		if animURL == "" {
+			animURL = s.GIFURL
+		}
+
+		if animURL != "" {
 			if s.VideoURL != "" {
-				fmt.Fprintf(&b, "[![%s](%s)](%s)\n\n", escapeCell(s.Scenario.Title), s.GIFURL, s.VideoURL)
+				fmt.Fprintf(&b, "[![%s](%s)](%s)\n\n", escapeCell(s.Scenario.Title), animURL, s.VideoURL)
 				fmt.Fprintf(&b, "🎬 [▶️ **Watch with Controls & Timeline Scrubbing (MP4)**](%s)\n\n", s.VideoURL)
 			} else {
-				fmt.Fprintf(&b, "![%s](%s)\n\n", escapeCell(s.Scenario.Title), s.GIFURL)
+				fmt.Fprintf(&b, "![%s](%s)\n\n", escapeCell(s.Scenario.Title), animURL)
 			}
 		} else if s.VideoURL != "" {
 			fmt.Fprintf(&b, "🎬 [▶️ **Watch Scenario Video (MP4)**](%s)\n\n", s.VideoURL)

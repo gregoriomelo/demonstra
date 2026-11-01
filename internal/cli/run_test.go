@@ -159,8 +159,8 @@ func TestExecute_PublishSubcommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("expected exit code 0, got %d (stderr: %s)", code, stderr.String())
 	}
-	if len(posted) != 1 || !strings.Contains(posted[0], "pr-7/abcdef1/checkout-flow/flow.gif?raw=true") {
-		t.Fatalf("expected PR #7 comment with GIF URL, got %v", posted)
+	if len(posted) != 1 || !strings.Contains(posted[0], "pr-7/abcdef1/checkout-flow/flow.webp?raw=true") || !strings.Contains(posted[0], "pr-7/abcdef1/checkout-flow/video.mp4") {
+		t.Fatalf("expected PR #7 comment with WebP and MP4 URLs, got %v", posted)
 	}
 }
 

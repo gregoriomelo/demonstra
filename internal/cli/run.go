@@ -222,8 +222,10 @@ func runPublishPipeline(ctx context.Context, opts options, env Env) error {
 
 	for i, sc := range scenarios {
 		var gifPath string
+		var webpPath string
 		var videoPath string
 		outGIF := filepath.Join(tmpMediaDir, fmt.Sprintf("%d-%s.gif", i+1, sc.Slug))
+		outWebP := filepath.Join(tmpMediaDir, fmt.Sprintf("%d-%s.webp", i+1, sc.Slug))
 		outMP4 := filepath.Join(tmpMediaDir, fmt.Sprintf("%d-%s.mp4", i+1, sc.Slug))
 
 		if sc.VideoPath != "" {
@@ -242,6 +244,12 @@ func runPublishPipeline(ctx context.Context, opts options, env Env) error {
 				gifPath = outGIF
 			}
 
+			if err := conv.ConvertToWebP(ctx, sc.VideoPath, outWebP); err != nil {
+				fmt.Fprintf(os.Stderr, "demonstra: warning: webp conversion failed for %q: %v\n", sc.Title, err)
+			} else {
+				webpPath = outWebP
+			}
+
 			if err := conv.ConvertToMP4(ctx, sc.VideoPath, outMP4); err != nil {
 				fmt.Fprintf(os.Stderr, "demonstra: warning: mp4 conversion failed for %q: %v\n", sc.Title, err)
 			} else {
@@ -255,6 +263,7 @@ func runPublishPipeline(ctx context.Context, opts options, env Env) error {
 		assetInputs = append(assetInputs, github.ScenarioAssetInput{
 			Scenario:       sc,
 			GIFPath:        gifPath,
+			WebPPath:       webpPath,
 			VideoPath:      videoPath,
 			ScreenshotPath: sc.Screenshots,
 		})
