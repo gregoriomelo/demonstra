@@ -340,3 +340,15 @@ func TestExecute_VersionFlag(t *testing.T) {
 	}
 }
 
+func TestRunTestCommand_CompoundCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runTestCommand(context.Background(), []string{"printf 'hello' && printf ' world'"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0 for compound command, got %d (stderr: %s)", code, stderr.String())
+	}
+	if stdout.String() != "hello world" {
+		t.Fatalf("expected output 'hello world', got %q", stdout.String())
+	}
+}
+
+

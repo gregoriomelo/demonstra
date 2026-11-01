@@ -230,7 +230,12 @@ func parseGitHubEvent(eventPath string) (int, string, string) {
 }
 
 func runTestCommand(ctx context.Context, cmdArgs []string, stdout, stderr io.Writer) int {
-	cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
+	var cmd *exec.Cmd
+	if len(cmdArgs) == 1 && strings.ContainsAny(cmdArgs[0], " &|;<>()$`\n") {
+		cmd = exec.CommandContext(ctx, "sh", "-c", cmdArgs[0])
+	} else {
+		cmd = exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
+	}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	err := cmd.Run()

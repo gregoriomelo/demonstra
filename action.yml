@@ -116,15 +116,20 @@ runs:
     - name: Run Test Command and Publish Visual PR Review
       shell: bash
       env:
+        TEST_CMD: ${{ inputs.command }}
+        RESULTS_DIR: ${{ inputs.results-dir }}
+        REPORT_FILE: ${{ inputs.report-file }}
+        BRANCH: ${{ inputs.branch }}
+        STRICT: ${{ inputs.strict }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
-        ARGS=(record --results-dir "${{ inputs.results-dir }}" --branch "${{ inputs.branch }}")
-        if [ -n "${{ inputs.report-file }}" ]; then
-          ARGS+=(--report-file "${{ inputs.report-file }}")
+        ARGS=(record --results-dir "$RESULTS_DIR" --branch "$BRANCH")
+        if [ -n "$REPORT_FILE" ]; then
+          ARGS+=(--report-file "$REPORT_FILE")
         fi
-        if [ "${{ inputs.strict }}" = "true" ]; then
+        if [ "$STRICT" = "true" ]; then
           ARGS+=(--strict)
         fi
 
-        ARGS+=(-- ${{ inputs.command }})
+        ARGS+=(-- sh -c "$TEST_CMD")
         demonstra "${ARGS[@]}"
