@@ -1,0 +1,40 @@
+name: Visual E2E Tests with Demonstra
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  e2e:
+    name: Run Playwright & Record Visual Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      # Single composite step replaces manual FFmpeg & Demonstra CLI installation
+      - name: Demonstra Visual Review
+        uses: demonstra-me/demonstra@v1
+        with:
+          command: npx playwright test
+          results-dir: ./test-results
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          strict: false

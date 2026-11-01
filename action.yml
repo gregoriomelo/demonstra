@@ -1,0 +1,112 @@
+name: 'Demonstra Visual PR Review'
+description: 'Record test videos/screenshots in CI and publish interactive visual reviews with animated WebP and MP4 timeline scrubbing on pull requests.'
+author: 'demonstra.me'
+branding:
+  icon: 'video'
+  color: 'red'
+
+inputs:
+  command:
+    description: 'The test command to execute and record (e.g. "npx playwright test")'
+    required: true
+    default: 'npx playwright test'
+  results-dir:
+    description: 'Directory where test video and screenshot artifacts are stored'
+    required: false
+    default: './test-results'
+  report-file:
+    description: 'Optional path to Playwright JSON report file'
+    required: false
+    default: ''
+  github-token:
+    description: 'GitHub token with repository write and pull request permissions'
+    required: false
+    default: ${{ github.token }}
+  branch:
+    description: 'Orphan branch name used to store visual review media assets'
+    required: false
+    default: 'demonstra-assets'
+  strict:
+    description: 'Fail the action step with non-zero exit code if visual publishing fails'
+    required: false
+    default: 'false'
+  version:
+    description: 'Version of demonstra CLI to use (defaults to latest release)'
+    required: false
+    default: 'latest'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Ensure FFmpeg is installed
+      shell: bash
+      run: |
+        if ! command -v ffmpeg >/dev/null 2>&1; then
+          echo "FFmpeg not detected. Installing FFmpeg..."
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install ffmpeg
+          else
+            echo "::error::Unsupported OS for automated FFmpeg installation: $RUNNER_OS"
+            exit 1
+          fi
+        fi
+        echo "FFmpeg is ready: $(ffmpeg -version | head -n 1)"
+
+    - name: Install Demonstra CLI
+      shell: bash
+      env:
+        DEMONSTRA_VERSION: ${{ inputs.version }}
+      run: |
+        OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        ARCH="$(uname -m)"
+        case "$ARCH" in
+          x86_64|amd64) GOARCH="amd64" ;;
+          aarch64|arm64) GOARCH="arm64" ;;
+          *) echo "::error::Unsupported architecture: $ARCH"; exit 1 ;;
+        esac
+
+        INSTALL_DIR="${RUNNER_TEMP:-/tmp}/demonstra-bin"
+        mkdir -p "$INSTALL_DIR"
+        BIN_NAME="demonstra-${OS}-${GOARCH}"
+        TARGET="$INSTALL_DIR/demonstra"
+
+        # Check if local fallback binary exists (for repo testing)
+        if [ -f "$GITHUB_ACTION_PATH/bin/$BIN_NAME" ]; then
+          cp "$GITHUB_ACTION_PATH/bin/$BIN_NAME" "$TARGET"
+        else
+          RELEASE_URL="https://github.com/demonstra-me/demonstra/releases/download/${DEMONSTRA_VERSION}/${BIN_NAME}"
+          if [ "$DEMONSTRA_VERSION" = "latest" ]; then
+            RELEASE_URL="https://github.com/demonstra-me/demonstra/releases/latest/download/${BIN_NAME}"
+          fi
+          echo "Downloading Demonstra CLI from $RELEASE_URL..."
+          if ! curl -sfL "$RELEASE_URL" -o "$TARGET"; then
+            echo "Release download failed, attempting fallback download..."
+            FALLBACK_URL="https://raw.githubusercontent.com/demonstra-me/demonstra/main/bin/${BIN_NAME}"
+            curl -sfL "$FALLBACK_URL" -o "$TARGET" || {
+              echo "::error::Could not download Demonstra binary for ${OS}-${GOARCH}"
+              exit 1
+            }
+          fi
+        fi
+
+        chmod +x "$TARGET"
+        echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+        echo "Demonstra CLI installed to $TARGET"
+
+    - name: Run Test Command and Publish Visual PR Review
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        ARGS=(record --results-dir "${{ inputs.results-dir }}" --branch "${{ inputs.branch }}")
+        if [ -n "${{ inputs.report-file }}" ]; then
+          ARGS+=(--report-file "${{ inputs.report-file }}")
+        fi
+        if [ "${{ inputs.strict }}" = "true" ]; then
+          ARGS+=(--strict)
+        fi
+
+        ARGS+=(-- ${{ inputs.command }})
+        demonstra "${ARGS[@]}"
