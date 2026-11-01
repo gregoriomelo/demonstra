@@ -68,6 +68,7 @@ runs:
       shell: bash
       env:
         DEMONSTRA_VERSION: ${{ inputs.version }}
+        TOKEN: ${{ inputs.github-token }}
       run: |
         OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
         ARCH="$(uname -m)"
@@ -87,22 +88,32 @@ runs:
           cp "$GITHUB_ACTION_PATH/bin/$BIN_NAME" "$TARGET"
         else
           echo "Downloading Demonstra CLI..."
-          BASE_URL="https://github.com/demonstra-me/demonstra/releases/download/${DEMONSTRA_VERSION}"
+          ACTION_REPO="${GITHUB_ACTION_REPOSITORY:-gregoriomelo/demonstra}"
+          BASE_URL="https://github.com/${ACTION_REPO}/releases/download/${DEMONSTRA_VERSION}"
           if [ "$DEMONSTRA_VERSION" = "latest" ]; then
-            BASE_URL="https://github.com/demonstra-me/demonstra/releases/latest/download"
+            BASE_URL="https://github.com/${ACTION_REPO}/releases/latest/download"
           fi
 
           VERSION_CLEAN="${DEMONSTRA_VERSION#v}"
           TAR_NAME="demonstra_${VERSION_CLEAN}_${OS}_${GOARCH}.tar.gz"
 
+          AUTH_HEADER=()
+          if [ -n "$TOKEN" ]; then
+            AUTH_HEADER=(-H "Authorization: token $TOKEN")
+          fi
+
           # Attempt 1: Standalone binary asset
-          if curl -sfL "$BASE_URL/$BIN_NAME" -o "$TARGET"; then
+          if curl -sfL "${AUTH_HEADER[@]}" "$BASE_URL/$BIN_NAME" -o "$TARGET"; then
             echo "Downloaded standalone binary."
           # Attempt 2: Tarball archive
-          elif curl -sfL "$BASE_URL/$TAR_NAME" -o "$INSTALL_DIR/archive.tar.gz"; then
+          elif curl -sfL "${AUTH_HEADER[@]}" "$BASE_URL/$TAR_NAME" -o "$INSTALL_DIR/archive.tar.gz"; then
             tar -xzf "$INSTALL_DIR/archive.tar.gz" -C "$INSTALL_DIR" demonstra
             rm -f "$INSTALL_DIR/archive.tar.gz"
             echo "Extracted binary from archive."
+          # Attempt 3: gh CLI fallback
+          elif command -v gh >/dev/null 2>&1 && GH_TOKEN="$TOKEN" gh release download "$DEMONSTRA_VERSION" --repo "$ACTION_REPO" --pattern "$BIN_NAME" --dir "$INSTALL_DIR" 2>/dev/null; then
+            mv "$INSTALL_DIR/$BIN_NAME" "$TARGET"
+            echo "Downloaded standalone binary via gh cli."
           else
             echo "::error::Could not download Demonstra binary ($BIN_NAME or $TAR_NAME) from $BASE_URL"
             exit 1
