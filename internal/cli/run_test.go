@@ -326,3 +326,17 @@ func TestExecute_InitSubcommand(t *testing.T) {
 	}
 }
 
+func TestExecute_VersionFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Execute(context.Background(), []string{"--version"}, Env{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	if code != 0 {
+		t.Fatalf("expected code 0, got %d", code)
+	}
+	if !strings.Contains(stdout.String(), "demonstra version") {
+		t.Errorf("expected version output, got %q", stdout.String())
+	}
+}
+

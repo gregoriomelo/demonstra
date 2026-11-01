@@ -20,6 +20,8 @@ import (
 	"github.com/demonstra-me/demonstra/internal/scaffold"
 )
 
+var Version = "dev"
+
 type Env struct {
 	LookupEnv func(string) string
 	Stdout    io.Writer
@@ -54,6 +56,11 @@ func Execute(ctx context.Context, args []string, env Env) int {
 	if len(args) == 0 {
 		fmt.Fprintln(env.Stderr, "usage: demonstra <init|record|publish> [flags] [-- command...]")
 		return 2
+	}
+
+	if args[0] == "--version" || args[0] == "-v" || args[0] == "version" {
+		fmt.Fprintf(env.Stdout, "demonstra version %s\n", Version)
+		return 0
 	}
 
 	subcmd := args[0]
