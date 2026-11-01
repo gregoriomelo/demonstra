@@ -1,0 +1,41 @@
+name: Demonstra Visual PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  visual-review:
+    name: Demonstra — Visual Review & Capture
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Install test browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Run Tests with Demonstra Visual Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sfL https://raw.githubusercontent.com/demonstra-me/demonstra/main/bin/demonstra-linux-amd64 -o /usr/local/bin/demonstra
+          chmod +x /usr/local/bin/demonstra
+          demonstra record \
+            --results-dir ./test-results \
+            -- {{TEST_COMMAND}}

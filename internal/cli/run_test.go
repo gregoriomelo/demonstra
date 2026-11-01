@@ -296,3 +296,33 @@ func TestExecute_ValidatesBeforeFFmpegAndPrefersPRHeadSHA(t *testing.T) {
 	}
 }
 
+func TestExecute_InitSubcommand(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "playwright.config.ts"), []byte("// pw"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := Execute(context.Background(), []string{
+		"init",
+		"--dir", tmp,
+	}, Env{
+		LookupEnv: func(string) string { return "" },
+		Stdout:    &stdout,
+		Stderr:    &stderr,
+	})
+
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d (stderr: %s)", code, stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), "Demonstra initialized for playwright project!") {
+		t.Errorf("unexpected stdout: %s", stdout.String())
+	}
+
+	workflowPath := filepath.Join(tmp, ".github", "workflows", "demonstra.yml")
+	if _, err := os.Stat(workflowPath); err != nil {
+		t.Errorf("workflow file not created: %v", err)
+	}
+}
+

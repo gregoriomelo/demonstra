@@ -17,6 +17,7 @@ import (
 	"github.com/demonstra-me/demonstra/internal/github"
 	"github.com/demonstra-me/demonstra/internal/media"
 	"github.com/demonstra-me/demonstra/internal/render"
+	"github.com/demonstra-me/demonstra/internal/scaffold"
 )
 
 type Env struct {
@@ -51,13 +52,17 @@ func Execute(ctx context.Context, args []string, env Env) int {
 	}
 
 	if len(args) == 0 {
-		fmt.Fprintln(env.Stderr, "usage: demonstra <record|publish> [flags] [-- command...]")
+		fmt.Fprintln(env.Stderr, "usage: demonstra <init|record|publish> [flags] [-- command...]")
 		return 2
 	}
 
 	subcmd := args[0]
+	if subcmd == "init" {
+		return runInitCommand(args[1:], env)
+	}
+
 	if subcmd != "record" && subcmd != "publish" {
-		fmt.Fprintf(env.Stderr, "unknown subcommand %q (expected 'record' or 'publish')\n", subcmd)
+		fmt.Fprintf(env.Stderr, "unknown subcommand %q (expected 'init', 'record', or 'publish')\n", subcmd)
 		return 2
 	}
 
@@ -98,6 +103,41 @@ func Execute(ctx context.Context, args []string, env Env) int {
 	}
 
 	return testExitCode
+}
+
+func runInitCommand(flagArgs []string, env Env) int {
+	fs := flag.NewFlagSet("demonstra init", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var dir string
+	var fw string
+	var force bool
+	fs.StringVar(&dir, "dir", ".", "Project root directory")
+	fs.StringVar(&fw, "framework", "", "Override framework (playwright, cypress, generic)")
+	fs.BoolVar(&force, "force", false, "Overwrite existing workflow and helper files")
+
+	if err := fs.Parse(flagArgs); err != nil {
+		fmt.Fprintf(env.Stderr, "error parsing flags: %v\n", err)
+		return 2
+	}
+
+	res, err := scaffold.Init(scaffold.InitOptions{
+		TargetDir: dir,
+		Framework: scaffold.Framework(fw),
+		Force:     force,
+	})
+	if err != nil {
+		fmt.Fprintf(env.Stderr, "demonstra init error: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintf(env.Stdout, "Demonstra initialized for %s project!\n", res.Framework)
+	for _, f := range res.CreatedFiles {
+		fmt.Fprintf(env.Stdout, "  ✓ Created %s\n", f)
+	}
+	for _, f := range res.SkippedFiles {
+		fmt.Fprintf(env.Stdout, "  - Skipped %s (already exists, use --force to overwrite)\n", f)
+	}
+	return 0
 }
 
 func parseOptions(subcmd string, flagArgs []string, lookupEnv func(string) string) (options, error) {
