@@ -72,5 +72,10 @@ func TestActionYML_UsesEnvVarsForInputs(t *testing.T) {
 			t.Errorf("action.yml run block should not directly interpolate ${{ inputs.* }}, use env vars instead")
 		}
 	}
+
+	// Composite actions do not have access to 'secrets' context
+	if strings.Contains(content, "secrets.") {
+		t.Errorf("action.yml should not reference 'secrets.' context directly")
+	}
 }
 

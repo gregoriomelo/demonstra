@@ -44,7 +44,7 @@ runs:
         TOKEN: ${{ inputs.github-token }}
       run: |
         if [ -z "$TOKEN" ]; then
-          echo "::error::Demonstra requires a GitHub token with 'contents: write' and 'pull-requests: write' permissions. Please pass 'github-token: \${{ secrets.GITHUB_TOKEN }}' and ensure permissions are configured in your workflow."
+          echo "::error::Demonstra requires a GitHub token with 'contents: write' and 'pull-requests: write' permissions. Please pass 'github-token' input and ensure permissions are configured in your workflow."
           exit 1
         fi
 
