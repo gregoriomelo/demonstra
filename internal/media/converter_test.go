@@ -123,6 +123,62 @@ func TestConvertToGIF_RunnerError(t *testing.T) {
 	}
 }
 
+func TestConvertToMP4_Success(t *testing.T) {
+	tmp := t.TempDir()
+	videoPath := filepath.Join(tmp, "video.webm")
+	outMP4Path := filepath.Join(tmp, "out", "video.mp4")
+
+	runner := &fakeRunner{
+		hook: func(_ int, _ string, args []string) error {
+			out := args[len(args)-1]
+			return os.WriteFile(out, []byte("fake-mp4-data"), 0o644)
+		},
+	}
+
+	conv := NewConverter(runner)
+	if err := conv.ConvertToMP4(context.Background(), videoPath, outMP4Path); err != nil {
+		t.Fatalf("ConvertToMP4 failed: %v", err)
+	}
+
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected 1 ffmpeg call, got %d", len(runner.calls))
+	}
+	call := runner.calls[0]
+	if call.name != "ffmpeg" {
+		t.Errorf("expected binary ffmpeg, got %q", call.name)
+	}
+	joined := strings.Join(call.args, " ")
+	if !strings.Contains(joined, "libx264") || !strings.Contains(joined, "yuv420p") || !strings.Contains(joined, "+faststart") {
+		t.Errorf("expected mp4 conversion flags, got %v", call.args)
+	}
+	data, err := os.ReadFile(outMP4Path)
+	if err != nil || string(data) != "fake-mp4-data" {
+		t.Errorf("unexpected output content: %s, err: %v", string(data), err)
+	}
+}
+
+func TestConvertToMP4_DirectCopyWhenAlreadyMP4(t *testing.T) {
+	tmp := t.TempDir()
+	inPath := filepath.Join(tmp, "source.mp4")
+	outPath := filepath.Join(tmp, "out", "dest.mp4")
+	if err := os.WriteFile(inPath, []byte("original-mp4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &fakeRunner{}
+	conv := NewConverter(runner)
+	if err := conv.ConvertToMP4(context.Background(), inPath, outPath); err != nil {
+		t.Fatalf("ConvertToMP4 failed: %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Errorf("expected 0 ffmpeg calls when copying mp4, got %d", len(runner.calls))
+	}
+	data, _ := os.ReadFile(outPath)
+	if string(data) != "original-mp4" {
+		t.Errorf("expected copied content, got %q", string(data))
+	}
+}
+
 func TestEncodeGIFsFromPNGs(t *testing.T) {
 	tmp := t.TempDir()
 	png1 := filepath.Join(tmp, "step-1.png")

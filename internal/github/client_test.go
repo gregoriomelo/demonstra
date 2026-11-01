@@ -18,8 +18,12 @@ import (
 func TestUploadPRScenarios_OrphanBranchCreation(t *testing.T) {
 	tmp := t.TempDir()
 	gifPath := filepath.Join(tmp, "flow.gif")
+	mp4Path := filepath.Join(tmp, "video.mp4")
 	shotPath := filepath.Join(tmp, "step-1.png")
 	if err := os.WriteFile(gifPath, []byte("GIF89a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mp4Path, []byte("ftypisom"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(shotPath, []byte("PNG"), 0o644); err != nil {
@@ -49,6 +53,12 @@ func TestUploadPRScenarios_OrphanBranchCreation(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"sha":"new-tree-sha"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/shop/git/commits":
+			body, _ := io.ReadAll(r.Body)
+			var payload struct {
+				Message string `json:"message"`
+				Tree    string `json:"tree"`
+			}
+			_ = json.Unmarshal(body, &payload)
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"sha":"new-commit-sha"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/repos/acme/shop/git/refs":
@@ -78,6 +88,7 @@ func TestUploadPRScenarios_OrphanBranchCreation(t *testing.T) {
 				Status: collector.StatusPassed,
 			},
 			GIFPath:        gifPath,
+			VideoPath:      mp4Path,
 			ScreenshotPath: []string{shotPath},
 		},
 	})
@@ -99,6 +110,10 @@ func TestUploadPRScenarios_OrphanBranchCreation(t *testing.T) {
 	wantGIF := "https://github.com/acme/shop/blob/demonstra-assets/pr-42/a8f921c/apply-coupon/flow.gif?raw=true"
 	if uploaded[0].GIFURL != wantGIF {
 		t.Errorf("expected GIFURL %q, got %q", wantGIF, uploaded[0].GIFURL)
+	}
+	wantVideo := "https://github.com/acme/shop/blob/demonstra-assets/pr-42/a8f921c/apply-coupon/video.mp4"
+	if uploaded[0].VideoURL != wantVideo {
+		t.Errorf("expected VideoURL %q, got %q", wantVideo, uploaded[0].VideoURL)
 	}
 	wantShot := "https://github.com/acme/shop/blob/demonstra-assets/pr-42/a8f921c/apply-coupon/screenshots/step-1.png?raw=true"
 	if len(uploaded[0].ScreenshotURLs) != 1 || uploaded[0].ScreenshotURLs[0] != wantShot {

@@ -20,12 +20,14 @@ const CommentMarker = "<!-- demonstra-pr-comment -->"
 type ScenarioAssetInput struct {
 	Scenario       collector.Scenario
 	GIFPath        string
+	VideoPath      string
 	ScreenshotPath []string
 }
 
 type UploadedScenario struct {
 	Scenario       collector.Scenario
 	GIFURL         string
+	VideoURL       string
 	ScreenshotURLs []string
 }
 
@@ -120,6 +122,21 @@ func (c *Client) UploadPRScenarios(ctx context.Context, prNumber int, commitSHA 
 			up.GIFURL = c.rawBlobURL(repoPath)
 		}
 
+		if in.VideoPath != "" {
+			blobSHA, err := c.createBlobFromFile(ctx, in.VideoPath)
+			if err != nil {
+				return nil, nil, fmt.Errorf("upload video blob for %s: %w", slug, err)
+			}
+			repoPath := fmt.Sprintf("pr-%d/%s/%s/video.mp4", prNumber, shortSHA, slug)
+			entries = append(entries, treeEntry{
+				Path: repoPath,
+				Mode: "100644",
+				Type: "blob",
+				SHA:  blobSHA,
+			})
+			up.VideoURL = c.blobURL(repoPath)
+		}
+
 		for i, shot := range in.ScreenshotPath {
 			blobSHA, err := c.createBlobFromFile(ctx, shot)
 			if err != nil {
@@ -172,6 +189,14 @@ func (c *Client) rawBlobURL(repoPath string) string {
 		web = "https://github.com"
 	}
 	return fmt.Sprintf("%s/%s/%s/blob/%s/%s?raw=true", web, c.Owner, c.Repo, c.Branch, repoPath)
+}
+
+func (c *Client) blobURL(repoPath string) string {
+	web := strings.TrimRight(c.WebBaseURL, "/")
+	if web == "" {
+		web = "https://github.com"
+	}
+	return fmt.Sprintf("%s/%s/%s/blob/%s/%s", web, c.Owner, c.Repo, c.Branch, repoPath)
 }
 
 func (c *Client) treeFolderURL(repoPath string) string {

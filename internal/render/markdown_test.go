@@ -150,6 +150,37 @@ func TestFormatComment_TableEscapingAndLengthGuardrail(t *testing.T) {
 	}
 }
 
+func TestFormatComment_VideoControlsLink(t *testing.T) {
+	in := RenderInput{
+		PRNumber:    42,
+		CommitSHA:   "a8f921c",
+		AssetBranch: "demonstra-assets",
+		Scenarios: []github.UploadedScenario{
+			{
+				Scenario: collector.Scenario{
+					Title:    "Checkout flow",
+					Slug:     "checkout-flow",
+					Status:   collector.StatusPassed,
+					Duration: 5 * time.Second,
+				},
+				GIFURL:   "https://github.com/acme/shop/blob/demonstra-assets/pr-42/a8f921c/checkout-flow/flow.gif?raw=true",
+				VideoURL: "https://github.com/acme/shop/blob/demonstra-assets/pr-42/a8f921c/checkout-flow/video.mp4",
+			},
+		},
+	}
+	got := FormatComment(in)
+
+	wantClickableGIF := "[![Checkout flow](https://github.com/acme/shop/blob/demonstra-assets/pr-42/a8f921c/checkout-flow/flow.gif?raw=true)](https://github.com/acme/shop/blob/demonstra-assets/pr-42/a8f921c/checkout-flow/video.mp4)"
+	if !strings.Contains(got, wantClickableGIF) {
+		t.Errorf("expected clickable GIF link in comment, got:\n%s", got)
+	}
+
+	wantVideoLink := "🎬 [▶️ **Watch with Controls & Timeline Scrubbing (MP4)**](https://github.com/acme/shop/blob/demonstra-assets/pr-42/a8f921c/checkout-flow/video.mp4)"
+	if !strings.Contains(got, wantVideoLink) {
+		t.Errorf("expected video controls link in comment, got:\n%s", got)
+	}
+}
+
 func TestWriteStepSummary(t *testing.T) {
 	tmp := t.TempDir()
 	summaryFile := filepath.Join(tmp, "step_summary.md")

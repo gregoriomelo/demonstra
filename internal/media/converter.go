@@ -77,6 +77,28 @@ func (c *Converter) ConvertToGIF(ctx context.Context, videoPath string, outGIFPa
 	return nil
 }
 
+func (c *Converter) ConvertToMP4(ctx context.Context, videoPath string, outMP4Path string) error {
+	if err := os.MkdirAll(filepath.Dir(outMP4Path), 0o755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+	if strings.EqualFold(filepath.Ext(videoPath), ".mp4") {
+		raw, err := os.ReadFile(videoPath)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(outMP4Path, raw, 0o644)
+	}
+	runner := c.Runner
+	if runner == nil {
+		runner = ExecRunner{}
+	}
+	args := []string{"-y", "-i", videoPath, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", outMP4Path}
+	if err := runner.Run(ctx, "ffmpeg", args...); err != nil {
+		return fmt.Errorf("ffmpeg mp4 conversion failed: %w", err)
+	}
+	return nil
+}
+
 func EncodeGIFsFromPNGs(pngPaths []string, outGIFPath string, delayHundredths int) error {
 	if len(pngPaths) == 0 {
 		return fmt.Errorf("no PNG files provided")

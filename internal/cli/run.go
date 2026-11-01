@@ -211,21 +211,24 @@ func runPublishPipeline(ctx context.Context, opts options, env Env) error {
 		return nil
 	}
 
-	tmpGIFDir, err := os.MkdirTemp("", "demonstra-gifs-*")
+	tmpMediaDir, err := os.MkdirTemp("", "demonstra-media-*")
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpGIFDir)
+	defer os.RemoveAll(tmpMediaDir)
 
 	conv := media.NewConverter(nil)
 	assetInputs := make([]github.ScenarioAssetInput, 0, len(scenarios))
 
 	for i, sc := range scenarios {
 		var gifPath string
-		outGIF := filepath.Join(tmpGIFDir, fmt.Sprintf("%d-%s.gif", i+1, sc.Slug))
+		var videoPath string
+		outGIF := filepath.Join(tmpMediaDir, fmt.Sprintf("%d-%s.gif", i+1, sc.Slug))
+		outMP4 := filepath.Join(tmpMediaDir, fmt.Sprintf("%d-%s.mp4", i+1, sc.Slug))
+
 		if sc.VideoPath != "" {
 			if err := conv.ConvertToGIF(ctx, sc.VideoPath, outGIF); err != nil {
-				fmt.Fprintf(os.Stderr, "demonstra: warning: ffmpeg conversion failed for %q: %v\n", sc.Title, err)
+				fmt.Fprintf(os.Stderr, "demonstra: warning: ffmpeg gif conversion failed for %q: %v\n", sc.Title, err)
 				if len(sc.Screenshots) > 0 {
 					if fbErr := media.EncodeGIFsFromPNGs(sc.Screenshots, outGIF, 120); fbErr == nil {
 						gifPath = outGIF
@@ -238,6 +241,12 @@ func runPublishPipeline(ctx context.Context, opts options, env Env) error {
 			} else {
 				gifPath = outGIF
 			}
+
+			if err := conv.ConvertToMP4(ctx, sc.VideoPath, outMP4); err != nil {
+				fmt.Fprintf(os.Stderr, "demonstra: warning: mp4 conversion failed for %q: %v\n", sc.Title, err)
+			} else {
+				videoPath = outMP4
+			}
 		} else if len(sc.Screenshots) > 0 {
 			if err := media.EncodeGIFsFromPNGs(sc.Screenshots, outGIF, 120); err == nil {
 				gifPath = outGIF
@@ -246,6 +255,7 @@ func runPublishPipeline(ctx context.Context, opts options, env Env) error {
 		assetInputs = append(assetInputs, github.ScenarioAssetInput{
 			Scenario:       sc,
 			GIFPath:        gifPath,
+			VideoPath:      videoPath,
 			ScreenshotPath: sc.Screenshots,
 		})
 	}
